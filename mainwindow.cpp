@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QTime>
 #include "star.h"
+#include <sys/time.h>
 
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow){
     ui->setupUi(this);
@@ -58,14 +59,18 @@ void MainWindow::paintEvent(QPaintEvent *e) {
       for(int j1 = 0; j1 < sectors_count; j1++){
           Sector* sector = galactika->sectors[i1][j1];
 
-          for(auto star : sector->stars){
-              brush.setColor(star->col);
-              painter.setBrush(brush);
+          for(int i = 1; i < sector->max_star_index; i++){
+              star* star_i = sector->stars[i];
 
-              int radius = star->radius();
-              painter.drawEllipse(star->x[0] * coefX + centerX + topX0,
-                                  star->x[1] * coefX + centerX + topY0,
-                                  radius, radius);
+              if(star_i){
+                  brush.setColor(star_i->col);
+                  painter.setBrush(brush);
+
+                  int radius = star_i->radius();
+                  painter.drawEllipse(star_i->x[0] * coefX + centerX + topX0,
+                                      star_i->x[1] * coefX + centerX + topY0,
+                                      radius, radius);
+              }
           }
       }
   }
@@ -75,8 +80,20 @@ void MainWindow::paintEvent(QPaintEvent *e) {
   painter.drawEllipse(galactika->sun->x[0] * coefX + centerX + topX0,
                       galactika->sun->x[1] * coefX + centerX + topY0,
                       10, 10);
+  struct timeval  tv;
+  gettimeofday(&tv, NULL);
 
+  double time_begin = ((double)tv.tv_sec) * 1000 +
+                        ((double)tv.tv_usec) / 1000;
   galactika->move();
+
+  gettimeofday(&tv, NULL);
+  double time_end = ((double)tv.tv_sec) * 1000 +
+                      ((double)tv.tv_usec) / 1000 ;
+
+  double total_time_ms = time_end - time_begin;
+
+  std::cout << "Move time: " << total_time_ms << std::endl;
 
   ui->lineEdit->setText(QString::number(star::starCounter));
   ui->lineEdit_2->setText(QString::number(galactika->sun->m));
