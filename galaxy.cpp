@@ -1,23 +1,17 @@
 #include "star.h"
-
-void EventWait::wait(){
-    std::unique_lock <std::mutex> setTriggerUniqueLock (setTriggerLock);
-    setTrigger.wait (setTriggerUniqueLock);
-}
-
-void EventWait::set(){
-    setTrigger.notify_all();
-}
+#include <iostream>
+#include <thread>
+using namespace std;
 
 template <typename T>
-void queue_wait<T>::unlock(){
+void QueueWait<T>::unlock(){
     count_wait = 0;
     empty_wait_flag = true;
-    pop_wait.set();
+    pop_wait_trigger.notify_all();
 }
 
 template <typename T>
-T queue_wait<T>::pop(){
+T QueueWait<T>::pop(){
     while (true) {
         push_pop_mutex.lock();
 
@@ -34,33 +28,50 @@ T queue_wait<T>::pop(){
 }
 
 template <typename T>
-void queue_wait<T>::wait_pop(){
+QueueWait<T>::QueueWait(int tps):thread_pool_size(tps){};
+
+template <typename T>
+void QueueWait<T>::wait_pop(){
     wait_mutex.lock();
     count_wait++;
     wait_mutex.unlock();
 
-    if(count_wait == moveThreadPool){
+    if(count_wait == thread_pool_size){
         while(empty_wait_flag){
-            empty_wait.set();
+            empty_wait_trigger.notify_all();
         }
     }
 
-    pop_wait.wait();
+    unique_lock <mutex> setTriggerUniqueLock (pop_wait_trigger_lock);
+    pop_wait_trigger.wait (setTriggerUniqueLock);
 }
 
 template <typename T>
-void queue_wait<T>::wait_empty(){
-    empty_wait.wait();
+void QueueWait<T>::wait_empty(){
+    unique_lock <mutex> setTriggerUniqueLock (empty_wait_trigger_lock);
+    empty_wait_trigger.wait (setTriggerUniqueLock);
     empty_wait_flag = false;
 }
 
-int star::starCounter = 0;
-int star::radius(){
+int Star::star_counter = 0;
+int Star::Radius(){
     //return 6 + m / massEarth;
     return 6;
 }
 
-star::star(double *coord, double *speed, double mass){
+Star& Star::operator+=(Star* &rhs) {
+    for (int i = 0; i < dim;++i) {
+        f[i] += rhs->f[i];
+        v[i] = (v[i]*m + rhs->v[i]*rhs->m) / (m + rhs->m);
+    }
+    m += rhs->m;
+
+    delete rhs;
+    rhs = nullptr;
+    return *this;
+}
+
+Star::Star(double *coord, double *speed, double mass){
     for(int k = 0; k < dim; ++k){
         x[k] = coord[k];
         v[k] = speed[k];
@@ -68,12 +79,12 @@ star::star(double *coord, double *speed, double mass){
 
     m = mass;
     col = Qt::cyan;
-    starCounter++;
+    star_counter++;
 }
 
-Sector::Sector(galaxy* gl){
+Sector::Sector(Galaxy* gl){
     this->gl = gl;
-    stars = new star*[starsInSector];
+    stars = new Star*[starsInSector];
     stars[0] = gl->sun;
 
     for(int i = 1; i < starsInSector; i++){
@@ -90,7 +101,7 @@ Sector::~Sector(){
     delete [] stars;
 }
 
-void Sector::move(std::vector<star*>& change_sector_requests_thread){
+void Sector::Move(vector<Star*>& change_sector_requests_thread){
    double dist;
    double dCoord[dim];
    for(int i = 0; i < max_star_index; ++i){ // force nullification
@@ -110,21 +121,8 @@ void Sector::move(std::vector<star*>& change_sector_requests_thread){
                        dist += dCoord[k] * dCoord[k];
                    }
                    if(sqrt(dist) < distConnect){
-                       double tmpM = stars[i]->m + stars[j]->m, tmpX[dim], tmpV[dim];
-                       for(int k = 0; k < dim; ++k){
-                           tmpX[k] = (stars[i]->x[k] * stars[i]->m + stars[j]->x[k] * stars[j]->m)/tmpM;
-                           tmpV[k] = (stars[i]->v[k] * stars[i]->m + stars[j]->v[k] * stars[j]->m)/tmpM;
-                       }
-
-                       delete stars[j];
-                       stars[j] = nullptr;
-                       stars_count--;
-
-                       stars[i]->m = tmpM;
-                       for(int k = 0; k < dim; ++k){
-                           stars[i]->x[k] = tmpX[k];
-                           stars[i]->v[k] = tmpV[k];
-                       }
+                       (*stars[i]) += stars[j];
+                       //cout << "add" << endl;
                    }
                }
            }
@@ -174,59 +172,58 @@ void Sector::move(std::vector<star*>& change_sector_requests_thread){
    }
 }
 
-void move_thread(galaxy* gl){
-    std::vector<star*> change_reqs;
-    while(true){
-        Sector* sec = gl->selectors_queue.pop();
+void MoveThread(Galaxy* gl){
+    vector<Star*> change_reqs;
+    while(gl->work){
+        Sector* sec = gl->selectors_queue->pop();
         if(sec == nullptr){
             gl->change_sector_requests_mutex.lock();
 
             gl->change_sector_requests.insert(
-                std::end(gl->change_sector_requests),
-                std::begin(change_reqs),
-                std::end(change_reqs)
+                end(gl->change_sector_requests),
+                begin(change_reqs),
+                end(change_reqs)
             );
 
             gl->change_sector_requests_mutex.unlock();
             change_reqs.clear();
 
-            gl->selectors_queue.wait_pop();
+            gl->selectors_queue->wait_pop();
             continue;
         }
-        sec->move(change_reqs);
+        sec->Move(change_reqs);
     }
+    gl->count_stoped++;
 }
 
-galaxy::galaxy(int n):num(n){
-    // самый массивный объект в начале координат
+Galaxy::Galaxy(int n, int tps):num(n),thread_pool_size(tps){
+    selectors_queue = new QueueWait<Sector*>(tps);
+    GenerateStars();
+    StarsToSectors();
+    CreateThreadPool();
+};
+
+void Galaxy::GenerateStars(){
     double x1[dim] = {0}, v1[dim] = {0};
-    sun = new star(x1, v1, massSun);
+    sun = new Star(x1, v1, massSun);
+
     CreateSectors();
 
     double rad;
     for(int i = 1; i < num; ++i){
         rad = 0;
         double R = rand() * systemRadius / RAND_MAX,
-        fi  = (2 * M_PI * rand()) / RAND_MAX,
-        theta = (M_PI * rand()) / RAND_MAX;
+        fi  = (2 * M_PI * rand()) / RAND_MAX;
         x1[0] = R  * cos(fi);
         x1[1] = R  * sin(fi);
-        if(dim == 3){
-            x1[0] *= sin(theta);
-            x1[1] *= sin(theta);
-            x1[3] = R * cos(theta);
-        }
         for(int k = 0; k < dim; ++k){
             rad += x1[k] * x1[k];
         }
-// вторая космическая скорость
-        double absV = sqrt(G * sectors[0][0]->stars[0]->m / sqrt(rad)), alpha = (2 * M_PI * rand()) / RAND_MAX;
-//если размерность 3, нужен еще один угол как для координат(два угла годятся и для плоскости, желающие могут сделать)
-//            v1[0] = absV * cos(alpha);
-//            v1[1] = absV * sin(alpha);
+        // вторая космическая скорость
+        double absV = sqrt(G * sectors[0][0]->stars[0]->m / sqrt(rad));
         v1[0] =  absV * sin(fi);
         v1[1] = -absV * cos(fi); // скорость направлена вдоль окружности с центром в начале координат
-        star* this_star = new star(x1, v1, massEarth / num * (6 * i));
+        Star* this_star = new Star(x1, v1, massEarth / num * (6 * i));
 
         Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
         if(sec){
@@ -236,26 +233,24 @@ galaxy::galaxy(int n):num(n){
             delete this_star;
         }
     }
-    StarsToSectors();
+}
 
-    //create thream pool
-    for(int i = 0; i < moveThreadPool; i++){
-        std::thread th(move_thread,this);
-        th.detach();
-    }
-};
-galaxy::~galaxy(){
+Galaxy::~Galaxy(){
+    delete selectors_queue;
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             delete sectors[i][j];
         }
     }
     delete sun;
+    work = false;
+    selectors_queue->unlock();
+    while (count_stoped != thread_pool_size);
 };
 
-Sector* galaxy::GetSectorByCoords(double x, double y){
-    int dx = x / sector_global_h + 40;
-    int dy = y / sector_global_h + 40;
+Sector* Galaxy::GetSectorByCoords(double x, double y){
+    int dx = x / sector_global_h + sectors_count / 2;
+    int dy = y / sector_global_h + sectors_count / 2;
 
     if(dx > 0 && dx < sectors_count && dy > 0 && dy < sectors_count){
         return sectors[dx][dx];
@@ -263,7 +258,8 @@ Sector* galaxy::GetSectorByCoords(double x, double y){
 
     return nullptr;
 }
-void galaxy::StarsToSectors(){
+
+void Galaxy::StarsToSectors(){
     for(auto star_i : change_sector_requests){
         Sector* sec = GetSectorByCoords(star_i->x[0],star_i->x[1]);
         sec->wait_add.push(star_i);
@@ -291,7 +287,7 @@ void galaxy::StarsToSectors(){
     }
 }
 
-void galaxy::CreateSectors(){
+void Galaxy::CreateSectors(){
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             sectors[i][j] = new Sector(this);
@@ -299,16 +295,28 @@ void galaxy::CreateSectors(){
     }
 }
 
-void galaxy::move(){
+void Galaxy::CreateThreadPool(){
+    for(int i = 0; i < thread_pool_size; i++){
+        thread th(MoveThread,this);
+        th.detach();
+    }
+}
+
+Galaxy& Galaxy::operator>>(ofstream &file){
+    cout << "Okda" << endl;
+    return *this;
+}
+
+void Galaxy::Move(){
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             if(sectors[i][j]->stars_count){
-                selectors_queue.que.push(sectors[i][j]);
+                selectors_queue->que.push(sectors[i][j]);
             }
         }
     }
-    selectors_queue.unlock();
-    selectors_queue.wait_empty();
+    selectors_queue->unlock();
+    selectors_queue->wait_empty();
 
     StarsToSectors();
     change_sector_requests.clear();
