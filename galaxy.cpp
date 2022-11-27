@@ -193,13 +193,13 @@ void MoveThread(Galaxy* gl){
         }
         sec->Move(change_reqs);
     }
+    gl->count_stoped_mutex.lock();
     gl->count_stoped++;
+    gl->count_stoped_mutex.unlock();
 }
 
 Galaxy::Galaxy(int n, int tps):num(n),thread_pool_size(tps){
     selectors_queue = new QueueWait<Sector*>(tps);
-    GenerateStars();
-    StarsToSectors();
     CreateThreadPool();
 };
 
@@ -233,9 +233,15 @@ void Galaxy::GenerateStars(){
             delete this_star;
         }
     }
+
+    StarsToSectors();
 }
 
 Galaxy::~Galaxy(){
+    if(!work){
+        Stop();
+    }
+
     delete selectors_queue;
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
@@ -243,9 +249,6 @@ Galaxy::~Galaxy(){
         }
     }
     delete sun;
-    work = false;
-    selectors_queue->unlock();
-    while (count_stoped != thread_pool_size);
 };
 
 Sector* Galaxy::GetSectorByCoords(double x, double y){
@@ -303,7 +306,60 @@ void Galaxy::CreateThreadPool(){
 }
 
 Galaxy& Galaxy::operator>>(ofstream &file){
-    cout << "Okda" << endl;
+    vector<Star*> all_stars;
+    for(int i = 0; i < sectors_count; i++){
+        for(int j = 0; j < sectors_count; j++){
+            if(sectors[i][j]->stars_count){
+                auto sec = sectors[i][j];
+
+                for(int k = 1; k < sec->max_star_index; k++){
+                    auto star_i = sec->stars[k];
+                    if(star_i){
+                        all_stars.push_back(star_i);
+                    }
+                }
+            }
+        }
+    }
+
+    int stars_count = all_stars.size();
+    file.write((const char*)&stars_count,sizeof (int));
+    for(auto star : all_stars){
+        file.write((const char*)star->x,sizeof (double));
+        file.write((const char*)&star->x[1],sizeof (double));
+        file.write((const char*)star->v,sizeof (double));
+        file.write((const char*)&star->v[1],sizeof (double));
+        file.write((const char*)&star->m,sizeof (double));
+    }
+    file.flush();
+    cout << "Count saved stars: " << all_stars.size() << endl;
+    return *this;
+}
+
+Galaxy& Galaxy::operator<<(ifstream &file){
+    double x1[dim] = {0}, v1[dim] = {0};
+    sun = new Star(x1, v1, massSun);
+
+    CreateSectors();
+
+    int stars_count = 0;
+    file.read((char*)&stars_count,sizeof (int));
+    for(int i = 0; i < stars_count; i++){
+        double star_vals[5];
+        file.read((char*)&star_vals, sizeof(star_vals));
+        double x[] = {star_vals[0],star_vals[1]};
+        double v[] = {star_vals[2],star_vals[3]};
+        Star* this_star = new Star(x, v, star_vals[4]);
+
+        Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
+        if(sec){
+            change_sector_requests.push_back(this_star);
+        }
+        else{
+            delete this_star;
+        }
+    }
+    cout << "Count loaded stars: " << stars_count << endl;
     return *this;
 }
 
@@ -320,4 +376,10 @@ void Galaxy::Move(){
 
     StarsToSectors();
     change_sector_requests.clear();
+}
+
+void Galaxy::Stop(){
+    work = false;
+    selectors_queue->unlock();
+    while (count_stoped != thread_pool_size);
 }

@@ -92,6 +92,7 @@ public:
     int thread_pool_size;
     bool work = true;
     int count_stoped = 0;
+    std::mutex count_stoped_mutex;
     Star* sun;
     Sector* sectors[sectors_count][sectors_count];
     QueueWait<Sector*>* selectors_queue;
@@ -101,12 +102,14 @@ public:
     Galaxy(int n, int tps);
     ~Galaxy();
     Galaxy& operator>>(std::ofstream &rhs);
+    Galaxy& operator<<(std::ifstream &rhs);
     Sector* GetSectorByCoords(double x, double y);
     void CreateSectors();
     void GenerateStars();
     void CreateThreadPool();
     void StarsToSectors();    
     void Move();
+    void Stop();
 };
 
 #endif // STAR_H

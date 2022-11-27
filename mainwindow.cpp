@@ -6,6 +6,8 @@
 #include <QTime>
 #include <sys/time.h>
 
+bool load_from_file = false;
+
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow){
     ui->setupUi(this);
     connect(ui->pushButtonStart,  SIGNAL(clicked()), this, SLOT(buttonText()));
@@ -18,9 +20,26 @@ MainWindow::~MainWindow(){
 void MainWindow::buttonText(){
     if(ui->pushButtonStart->text()==textB[0]){
         current_galaxy = new Galaxy(numStars,threadPoolSize);
+        if(load_from_file){
+            std::ifstream file("galaxy.txt",std::ios::in | std::ios::binary);
+            (*current_galaxy) << file;
+            file.close();
+        }
+        else{
+            current_galaxy->GenerateStars();
+        }
+
         ui->pushButtonStart->setText(textB[1]);
         connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
-    }else{
+    }
+    else{
+        current_galaxy->Stop();
+        load_from_file = true;
+
+        std::ofstream file("galaxy.txt",std::ios::out | std::ios::binary);
+        (*current_galaxy) >> file;
+        file.close();
+
         delete current_galaxy;
         current_galaxy = nullptr;
         ui->pushButtonStart->setText(textB[0]);
