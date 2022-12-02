@@ -3,6 +3,19 @@
 #include <thread>
 using namespace std;
 
+const int borderMassC = 10;
+const double G = 6.67408e-11, systemRadius = 1e12, distConnect = 1e9, dt = 30000;
+const double massSun   = 1.98892e30,
+             massEarth = 5.9742e24,
+             massJup   = 1898.6e24,
+             massUran  = 86.832e24;
+
+const double borderMass[] = {borderMassC*massEarth, borderMassC*massUran, borderMassC*massJup, borderMassC*massSun};
+const int nBorders = sizeof(borderMass) / sizeof(double);
+
+const QColor colStar[] = {Qt::cyan, Qt::darkGreen, Qt::magenta, Qt::yellow, Qt::white};
+const int nColor = sizeof(colStar) / sizeof(colStar[0]);
+
 template <typename T>
 void QueueWait<T>::unlock(){
     empty_wait_flag = true;
@@ -56,9 +69,16 @@ void QueueWait<T>::wait_empty(){
     empty_wait_flag = false;
 }
 
-int Star::Radius(){
-    //return 6 + m / massEarth;
-    return 6;
+void Star::ChangeColourRadius(){
+    col = colStar[nColor-1];
+    radius = 6;
+    for(int i = 0; i < nBorders; i++){
+        if(m < borderMass[i]){
+            col = colStar[i];
+            break;
+        }
+        radius += 3;
+    }
 }
 
 Star& Star::operator+=(Star* &rhs) {
@@ -67,6 +87,7 @@ Star& Star::operator+=(Star* &rhs) {
         v[i] = (v[i]*m + rhs->v[i]*rhs->m) / (m + rhs->m);
     }
     m += rhs->m;
+    ChangeColourRadius();
 
     delete rhs;
     rhs = nullptr;
@@ -80,7 +101,7 @@ Star::Star(double *coord, double *speed, double mass, Galaxy* gl){
     }
 
     m = mass;
-    col = Qt::cyan;
+    ChangeColourRadius();
     galaxy = gl;
     gl->star_counter++;
 }

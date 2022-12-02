@@ -19,18 +19,7 @@ const double sector_global_h = sun_radius / coefX;
 const int sectors_count = length / sun_radius;
 
 const int dim = 2;
-const int numStars = 100;
-const int borderMassC = 10;
-const double G = 6.67408e-11, systemRadius = 1e12, distConnect = 1e9, dt = 30000;
-const double massSun   = 1.98892e30,
-             massJup   = 1898.6e24,
-             massUran  = 86.832e24,
-             massEarth = 5.9742e24,
-             massVenus = 4.867e24;
-const double borderMass[] = {borderMassC*massEarth, borderMassC*massUran, borderMassC*massJup, borderMassC*massSun};
-
-//const QColor colStar[] = {Qt::cyan, Qt::darkGreen, Qt::magenta, Qt::yellow, Qt::white};
-//const int nColor = sizeof(colStar) / sizeof(colStar[0]);
+const int numStars = 30000;
 
 template <typename T>
 class QueueWait{
@@ -66,10 +55,11 @@ public:
     Galaxy* galaxy;
 
     QColor col;
+    int radius = 6;
     Star(double *coord, double *speed, double mass, Galaxy* gl);
     Star& operator+=(Star* &rhs);
     ~Star();
-    int Radius();
+    void ChangeColourRadius();
 };
 
 class Sector{

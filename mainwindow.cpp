@@ -97,10 +97,9 @@ void MainWindow::paintEvent(QPaintEvent *e) {
                         brush.setColor(star_i->col);
                         painter.setBrush(brush);
 
-                        int radius = star_i->Radius();
                         painter.drawEllipse(star_i->x[0] * coefX + centerX + topX0,
                                             star_i->x[1] * coefX + centerX + topY0,
-                                            radius, radius);
+                                            star_i->radius, star_i->radius);
                     }
                 }
             }
@@ -110,7 +109,7 @@ void MainWindow::paintEvent(QPaintEvent *e) {
         painter.setBrush(brush);
         painter.drawEllipse(current_galaxy->sun->x[0] * coefX + centerX + topX0,
                             current_galaxy->sun->x[1] * coefX + centerX + topY0,
-                            10, 10);
+                            sun_radius, sun_radius);
         /*struct timeval  tv;
         gettimeofday(&tv, NULL);
 
