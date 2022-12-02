@@ -29,6 +29,7 @@ protected:
 
 private slots:
     void buttonText();
+    void saveGalaxy();
 };
 
 #endif // MAINWINDOW_H

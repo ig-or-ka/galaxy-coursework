@@ -11,17 +11,33 @@ bool load_from_file = false;
 MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWindow){
     ui->setupUi(this);
     connect(ui->pushButtonStart,  SIGNAL(clicked()), this, SLOT(buttonText()));
+    connect(ui->saveGalaxy,  SIGNAL(clicked()), this, SLOT(saveGalaxy()));
     connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
     timer->start(1);
 }
 MainWindow::~MainWindow(){
     delete ui;
 }
+
+void MainWindow::saveGalaxy(){
+    current_galaxy->Stop();
+    load_from_file = true;
+
+    std::ofstream file(ui->fileaNameEdit->text().toStdString(),std::ios::out | std::ios::binary);
+    (*current_galaxy) >> file;
+    file.close();
+
+    delete current_galaxy;
+    current_galaxy = nullptr;
+    ui->pushButtonStart->setText(textB[0]);
+    disconnect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
+}
+
 void MainWindow::buttonText(){
     if(ui->pushButtonStart->text()==textB[0]){
         current_galaxy = new Galaxy(numStars,threadPoolSize);
         if(load_from_file){
-            std::ifstream file("galaxy.txt",std::ios::in | std::ios::binary);
+            std::ifstream file(ui->fileaNameEdit->text().toStdString(),std::ios::in | std::ios::binary);
             (*current_galaxy) << file;
             file.close();
         }
@@ -35,10 +51,6 @@ void MainWindow::buttonText(){
     else{
         current_galaxy->Stop();
         load_from_file = true;
-
-        std::ofstream file("galaxy.txt",std::ios::out | std::ios::binary);
-        (*current_galaxy) >> file;
-        file.close();
 
         delete current_galaxy;
         current_galaxy = nullptr;
@@ -114,7 +126,7 @@ void MainWindow::paintEvent(QPaintEvent *e) {
 
         //std::cout << "Move time: " << total_time_ms << std::endl;
 
-        ui->lineEdit->setText(QString::number(Star::star_counter));
+        ui->lineEdit->setText(QString::number(current_galaxy->star_counter));
         ui->lineEdit_2->setText(QString::number(current_galaxy->sun->m));
         ui->lineEdit_3->setText(QString::number(current_galaxy->sun->x[0]));
     }

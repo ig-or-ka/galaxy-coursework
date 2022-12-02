@@ -8,7 +8,7 @@
 #ifndef STAR_H
 #define STAR_H
 
-const int threadPoolSize = 16;
+const int threadPoolSize = 20;
 const int starsInSector = 1000;
 const int sun_radius = 20;
 const int topX0 = 100, topY0 = 100, h = 800, length = 800;
@@ -19,7 +19,7 @@ const double sector_global_h = sun_radius / coefX;
 const int sectors_count = length / sun_radius;
 
 const int dim = 2;
-const int numStars = 10000;
+const int numStars = 100;
 const int borderMassC = 10;
 const double G = 6.67408e-11, systemRadius = 1e12, distConnect = 1e9, dt = 30000;
 const double massSun   = 1.98892e30,
@@ -55,22 +55,22 @@ public:
     void wait_empty();
 };
 
+class Galaxy;
+
 class Star{
 public:
-    static int star_counter;
     double x[dim];
     double v[dim];
     double m;
     double f[dim];
+    Galaxy* galaxy;
 
     QColor col;
-    Star(double *coord, double *speed, double mass);
+    Star(double *coord, double *speed, double mass, Galaxy* gl);
     Star& operator+=(Star* &rhs);
-    ~Star(){star_counter--;}
+    ~Star();
     int Radius();
 };
-
-class Galaxy;
 
 class Sector{
 private:
@@ -88,9 +88,11 @@ public:
 
 class Galaxy{
 public:
+    int star_counter = 0;
     int num;
     int thread_pool_size;
     bool work = true;
+    bool stoped = false;
     int count_stoped = 0;
     std::mutex count_stoped_mutex;
     Star* sun;
@@ -98,6 +100,8 @@ public:
     QueueWait<Sector*>* selectors_queue;
     std::mutex change_sector_requests_mutex;
     std::vector<Star*> change_sector_requests;
+    std::mutex stop_wait_trigger_lock;
+    std::condition_variable stop_wait_trigger;
 
     Galaxy(int n, int tps);
     ~Galaxy();
