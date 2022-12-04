@@ -9,6 +9,8 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class StarsInfoWindow;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -21,6 +23,7 @@ public:
     QTimer *timer = new QTimer(this);
 
 private:
+    StarsInfoWindow* info_window;
     Ui::MainWindow *ui;
     Galaxy* current_galaxy = nullptr;
 

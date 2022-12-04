@@ -1,6 +1,8 @@
 #include "star.h"
 #include <iostream>
 #include <thread>
+#include <unordered_set>
+#include <algorithm>
 using namespace std;
 
 const int borderMassC = 10;
@@ -129,7 +131,7 @@ Sector::~Sector(){
     delete [] stars;
 }
 
-void Sector::Move(vector<Star*>& change_sector_requests_thread){
+void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
    double dist;
    double dCoord[dim];
    for(int i = 0; i < max_star_index; ++i){ // force nullification
@@ -149,8 +151,9 @@ void Sector::Move(vector<Star*>& change_sector_requests_thread){
                        dist += dCoord[k] * dCoord[k];
                    }
                    if(sqrt(dist) < distConnect){
+                       change_sector_requests_thread.push_back({REMOVED_STAR,stars[j]});
                        (*stars[i]) += stars[j];
-                       //cout << "add" << endl;
+                       change_sector_requests_thread.push_back({CHANGE_MASS,stars[i]});
                    }
                }
            }
@@ -187,12 +190,13 @@ void Sector::Move(vector<Star*>& change_sector_requests_thread){
            Sector* new_sector = gl->GetSectorByCoords(stars[i]->x[0],stars[i]->x[1]);
 
            if(new_sector == nullptr){
+               change_sector_requests_thread.push_back({REMOVED_STAR,stars[i]});
                delete stars[i];
                stars[i] = nullptr;
                stars_count--;
            }
            else if(new_sector != this){
-               change_sector_requests_thread.push_back(stars[i]);
+               change_sector_requests_thread.push_back({CHANGE_SECTOR,stars[i]});
                stars[i] = nullptr;
                stars_count--;
            }
@@ -201,14 +205,14 @@ void Sector::Move(vector<Star*>& change_sector_requests_thread){
 }
 
 void MoveThread(Galaxy* gl){
-    vector<Star*> change_reqs;
+    vector<ChangeRequest> change_reqs;
     while(gl->work){
         Sector* sec = gl->selectors_queue->pop();
         if(sec == nullptr){
             gl->change_sector_requests_mutex.lock();
 
-            gl->change_sector_requests.insert(
-                end(gl->change_sector_requests),
+            gl->change_status_requests.insert(
+                end(gl->change_status_requests),
                 begin(change_reqs),
                 end(change_reqs)
             );
@@ -264,14 +268,17 @@ void Galaxy::GenerateStars(){
 
         Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
         if(sec){
-            change_sector_requests.push_back(this_star);
+            change_status_requests.push_back({CHANGE_SECTOR,this_star});
+            if(i >= num - STARS_TOP_COUNT){
+                top_mass_stars.push_back(this_star);
+            }
         }
         else{
             delete this_star;
         }
     }
 
-    StarsToSectors();
+    DoRequests();
 }
 
 Galaxy::~Galaxy(){
@@ -299,13 +306,44 @@ Sector* Galaxy::GetSectorByCoords(double x, double y){
     return nullptr;
 }
 
-void Galaxy::StarsToSectors(){
-    for(auto star_i : change_sector_requests){
-        Sector* sec = GetSectorByCoords(star_i->x[0],star_i->x[1]);
-        sec->wait_add.push(star_i);
+bool sort_key(Star* a, Star* b){
+    if(!a){
+        return false;
+    }
+    if(!b){
+        return true;
+    }
+    return a->m < b->m;
+}
+
+bool sort_key_reqs(ChangeRequest a, ChangeRequest b){
+    return a.star->m < b.star->m;
+}
+
+void Galaxy::DoRequests(){
+    unordered_set<Star*> removed_stars;
+    unordered_set<Star*> changed_mass_stars;
+
+    for(auto request : change_status_requests){
+        switch (request.action) {
+            case CHANGE_SECTOR:
+            {
+                Sector* sec = GetSectorByCoords(request.star->x[0],request.star->x[1]);
+                sec->wait_add.push(request.star);
+            }
+            break;
+
+            case CHANGE_MASS:
+                changed_mass_stars.insert(request.star);
+            break;
+
+            case REMOVED_STAR:
+                removed_stars.insert(request.star);
+            break;
+        }
     }
 
-    change_sector_requests.clear();
+    change_status_requests.clear();
 
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
@@ -323,6 +361,46 @@ void Galaxy::StarsToSectors(){
                     }
                 }
             }
+        }
+    }
+
+    for(auto star : removed_stars){
+        if(changed_mass_stars.count(star)){
+            changed_mass_stars.erase(star);
+        }
+    }
+
+    int count_removed = 0;
+    for(size_t i = 0; i < top_mass_stars.size(); i++){
+        if(removed_stars.count(top_mass_stars[i])){
+            top_mass_stars[i] = 0;
+            count_removed++;
+        }
+        else if(changed_mass_stars.count(top_mass_stars[i])){
+            changed_mass_stars.erase(top_mass_stars[i]);
+        }
+    }
+
+    if(changed_mass_stars.count(sun)){
+        changed_mass_stars.erase(sun);
+    }
+
+    sort(top_mass_stars.begin(),top_mass_stars.end(),sort_key);
+
+    for(int i = 0; i < count_removed; i++){
+        top_mass_stars.pop_back();
+    }
+
+    for(auto star : changed_mass_stars){
+        if(star->m > top_mass_stars[0]->m){
+            top_mass_stars.push_back(star);
+        }
+    }
+
+    sort(top_mass_stars.begin(),top_mass_stars.end(),sort_key);
+    if(top_mass_stars.size() > ADD_STARS_TOP_COUNT + STARS_TOP_COUNT){
+        for(size_t i = 0; i < top_mass_stars.size() - ADD_STARS_TOP_COUNT - STARS_TOP_COUNT; i++){
+            top_mass_stars.erase(top_mass_stars.begin());
         }
     }
 }
@@ -392,13 +470,19 @@ Galaxy& Galaxy::operator<<(ifstream &file){
         else{
             Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
             if(sec){
-                change_sector_requests.push_back(this_star);
+                change_status_requests.push_back({CHANGE_SECTOR,this_star});
             }
             else{
                 delete this_star;
             }
         }
     }
+
+    sort(change_status_requests.begin(),change_status_requests.end(),sort_key_reqs);
+    for(int i = 0; i < STARS_TOP_COUNT; i++){
+        top_mass_stars.push_back(change_status_requests[change_status_requests.size()-STARS_TOP_COUNT+i].star);
+    }
+
     //cout << "Count loaded stars: " << stars_count << endl;
     return *this;
 }
@@ -414,8 +498,7 @@ void Galaxy::Move(){
     selectors_queue->unlock();
     selectors_queue->wait_empty();
 
-    StarsToSectors();
-    change_sector_requests.clear();
+    DoRequests();
 }
 
 void Galaxy::Stop(){

@@ -1,9 +1,11 @@
+#include "starsinfowindow.h"
 #include "mainwindow.h"
 #include "math.h"
 
 #include "ui_mainwindow.h"
 #include <QPainter>
 #include <QTime>
+#include <iostream>
 #include <sys/time.h>
 
 bool load_from_file = false;
@@ -14,13 +16,21 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent), ui(new Ui::MainWin
     connect(ui->saveGalaxy,  SIGNAL(clicked()), this, SLOT(saveGalaxy()));
     connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
     timer->start(1);
+
+    info_window = new StarsInfoWindow(this);
+    info_window->show();
 }
 MainWindow::~MainWindow(){
     delete ui;
 }
 
-void MainWindow::saveGalaxy(){
+void MainWindow::saveGalaxy(){    
     current_galaxy->Stop();
+    info_window->sun_item->star = nullptr;
+    for(auto item : info_window->items_index){
+        delete  item;
+    }
+    info_window->items_index.clear();
     load_from_file = true;
 
     std::ofstream file(ui->fileaNameEdit->text().toStdString(),std::ios::out | std::ios::binary);
@@ -45,11 +55,17 @@ void MainWindow::buttonText(){
             current_galaxy->GenerateStars();
         }
 
+        info_window->sun_item->star = current_galaxy->sun;
         ui->pushButtonStart->setText(textB[1]);
         connect(timer, &QTimer::timeout, this, QOverload<>::of(&MainWindow::update));
     }
-    else{
+    else{        
         current_galaxy->Stop();
+        info_window->sun_item->star = nullptr;
+        for(auto item : info_window->items_index){
+            delete  item;
+        }
+        info_window->items_index.clear();
         load_from_file = true;
 
         delete current_galaxy;
@@ -128,5 +144,33 @@ void MainWindow::paintEvent(QPaintEvent *e) {
         ui->lineEdit->setText(QString::number(current_galaxy->star_counter));
         ui->lineEdit_2->setText(QString::number(current_galaxy->sun->m));
         ui->lineEdit_3->setText(QString::number(current_galaxy->sun->x[0]));
+
+        if(current_galaxy->top_mass_stars.size() < info_window->items_index.size()){
+            int count_remove = info_window->items_index.size() - current_galaxy->top_mass_stars.size();
+            for(int i = 0; i < count_remove; i++){
+                delete info_window->items_index.back();
+                info_window->items_index.pop_back();
+            }
+        }
+        else if(info_window->items_index.size() < STARS_TOP_COUNT){
+            size_t count_add;
+            if(current_galaxy->top_mass_stars.size() < STARS_TOP_COUNT){
+                count_add = current_galaxy->top_mass_stars.size() - info_window->items_index.size();
+            }
+            else{
+                count_add = STARS_TOP_COUNT - info_window->items_index.size();
+            }
+            info_window->AddItems(count_add);
+        }
+
+        int star_point = 0;
+        int count_out = current_galaxy->top_mass_stars.size();
+        if(current_galaxy->top_mass_stars.size() >= STARS_TOP_COUNT){
+            star_point = current_galaxy->top_mass_stars.size() - STARS_TOP_COUNT;
+            count_out = STARS_TOP_COUNT;
+        }
+        for(int i = 0; i < count_out; i++){
+            info_window->items_index[count_out-i-1]->star = current_galaxy->top_mass_stars[i+star_point];
+        }
     }
 }

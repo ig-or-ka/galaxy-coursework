@@ -19,7 +19,9 @@ const double sector_global_h = sun_radius / coefX;
 const int sectors_count = length / sun_radius;
 
 const int dim = 2;
-const int numStars = 30000;
+const int numStars = 100000;
+const int STARS_TOP_COUNT = 100;
+const int ADD_STARS_TOP_COUNT = 100;
 
 template <typename T>
 class QueueWait{
@@ -58,8 +60,18 @@ public:
     int radius = 6;
     Star(double *coord, double *speed, double mass, Galaxy* gl);
     Star& operator+=(Star* &rhs);
+
     ~Star();
     void ChangeColourRadius();
+};
+
+const int CHANGE_SECTOR = 1;
+const int REMOVED_STAR = 2;
+const int CHANGE_MASS = 3;
+
+struct ChangeRequest{
+    int action;
+    Star* star;
 };
 
 class Sector{
@@ -72,7 +84,7 @@ public:
     int stars_count = 0;
     int max_star_index = 0;
     std::queue<Star*> wait_add;
-    void Move(std::vector<Star*>& change_sector_requests_thread);
+    void Move(std::vector<ChangeRequest>& change_sector_requests_thread);
     ~Sector();
 };
 
@@ -89,9 +101,10 @@ public:
     Sector* sectors[sectors_count][sectors_count];
     QueueWait<Sector*>* selectors_queue;
     std::mutex change_sector_requests_mutex;
-    std::vector<Star*> change_sector_requests;
+    std::vector<ChangeRequest> change_status_requests;
     std::mutex stop_wait_trigger_lock;
     std::condition_variable stop_wait_trigger;
+    std::vector<Star*> top_mass_stars;
 
     Galaxy(int n, int tps);
     ~Galaxy();
@@ -101,7 +114,7 @@ public:
     void CreateSectors();
     void GenerateStars();
     void CreateThreadPool();
-    void StarsToSectors();    
+    void DoRequests();
     void Move();
     void Stop();
 };

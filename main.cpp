@@ -1,3 +1,4 @@
+#include "starsinfowindow.h"
 #include "mainwindow.h"
 
 #include <QApplication>

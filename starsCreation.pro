@@ -12,14 +12,20 @@ CONFIG += c++11
 SOURCES += \
     galaxy.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    starinfoitem.cpp \
+    starsinfowindow.cpp
 
 HEADERS += \
     mainwindow.h \
-    star.h
+    star.h \
+    starinfoitem.h \
+    starsinfowindow.h
 
 FORMS += \
-    mainwindow.ui
+    mainwindow.ui \
+    starinfoitem.ui \
+    starsinfowindow.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
