@@ -8,18 +8,9 @@
 #ifndef STAR_H
 #define STAR_H
 
-const int threadPoolSize = 20;
 const int starsInSector = 1000;
-const int sun_radius = 20;
-const int topX0 = 100, topY0 = 100, h = 800, length = 800;
-
-const double coefX = length / 2 / 1e12;
-const int centerX = length / 2;
-const double sector_global_h = sun_radius / coefX;
-const int sectors_count = length / sun_radius;
-
+const int topX0 = 100, topY0 = 100;
 const int dim = 2;
-const int numStars = 100000;
 const int STARS_TOP_COUNT = 100;
 const int ADD_STARS_TOP_COUNT = 100;
 
@@ -90,7 +81,11 @@ public:
 
 class Galaxy{
 public:
+    long time = 0;
+    long step = 0;
     int star_counter = 0;
+    double stars_mass = 0;
+    std::mutex counter_mutex;
     int num;
     int thread_pool_size;
     bool work = true;
@@ -98,7 +93,7 @@ public:
     int count_stoped = 0;
     std::mutex count_stoped_mutex;
     Star* sun;
-    Sector* sectors[sectors_count][sectors_count];
+    Sector*** sectors;
     QueueWait<Sector*>* selectors_queue;
     std::mutex change_sector_requests_mutex;
     std::vector<ChangeRequest> change_status_requests;
@@ -106,7 +101,19 @@ public:
     std::condition_variable stop_wait_trigger;
     std::vector<Star*> top_mass_stars;
 
-    Galaxy(int n, int tps);
+    int length;
+    int sun_radius;
+    double systemRadius = 1e12;
+    int dt;
+
+    double coefX;
+    int centerX;
+    double sector_global_h;
+    int sectors_count;
+
+    Galaxy(int count_stars, int count_threads, int size_sector, int size_rect, double system_radius, int dt);
+    Galaxy();
+    void Init();
     ~Galaxy();
     Galaxy& operator>>(std::ofstream &rhs);
     Galaxy& operator<<(std::ifstream &rhs);

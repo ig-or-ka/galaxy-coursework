@@ -4,6 +4,7 @@
 #include <iostream>
 #include <QLabel>
 #include <QVBoxLayout>
+#include "star.h"
 
 StarsInfoWindow::StarsInfoWindow(QWidget *parent) :
     QDialog(parent),
@@ -29,6 +30,13 @@ void StarsInfoWindow::AddItems(int count){
         items_index.push_back(item);
         ui->scrollInfoArea->widget()->layout()->addWidget(item);
     }
+}
+
+void StarsInfoWindow::SetParams(Galaxy* galaxy){
+    ui->systemMass->setText(QString::number(galaxy->stars_mass));
+    ui->starsCount->setText(QString::number(galaxy->star_counter));
+    ui->timeGl->setText(QString::number(galaxy->time));
+    ui->glGl->setText(QString::number(galaxy->step));
 }
 
 StarsInfoWindow::~StarsInfoWindow()

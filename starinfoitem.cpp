@@ -25,9 +25,14 @@ void StarInfoItem::paintEvent(QPaintEvent *event){
         QBrush brush(star->col);
         brush.setStyle(Qt::SolidPattern);
         painter.setBrush(brush);
-        painter.drawEllipse(0,0,30,30);
+        painter.drawEllipse(0,10,30,30);
 
+        double speed = sqrt(star->v[0]*star->v[0]+star->v[1]*star->v[1]);
+
+        ui->starSpeed->setText(QString::number(speed));
         ui->starMass->setText(QString::number(star->m));
+        ui->starX->setText(QString::number(star->x[0]));
+        ui->starY->setText(QString::number(star->x[1]));
     }
 }
 

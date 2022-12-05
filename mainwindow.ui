@@ -30,40 +30,10 @@
      <string>Start</string>
     </property>
    </widget>
-   <widget class="QLineEdit" name="lineEdit">
-    <property name="geometry">
-     <rect>
-      <x>200</x>
-      <y>10</y>
-      <width>113</width>
-      <height>21</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QLineEdit" name="lineEdit_2">
-    <property name="geometry">
-     <rect>
-      <x>200</x>
-      <y>30</y>
-      <width>113</width>
-      <height>21</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QLineEdit" name="lineEdit_3">
-    <property name="geometry">
-     <rect>
-      <x>200</x>
-      <y>50</y>
-      <width>113</width>
-      <height>21</height>
-     </rect>
-    </property>
-   </widget>
    <widget class="QLineEdit" name="fileaNameEdit">
     <property name="geometry">
      <rect>
-      <x>330</x>
+      <x>230</x>
       <y>10</y>
       <width>113</width>
       <height>21</height>
@@ -84,6 +54,19 @@
     </property>
     <property name="text">
      <string>Save</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="createGalaxy">
+    <property name="geometry">
+     <rect>
+      <x>229</x>
+      <y>40</y>
+      <width>111</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Create</string>
     </property>
    </widget>
   </widget>

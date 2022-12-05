@@ -19,6 +19,7 @@ public:
     explicit StarsInfoWindow(QWidget *parent = nullptr);
     ~StarsInfoWindow();
     void AddItems(int count);
+    void SetParams(Galaxy* galaxy);
 
 private:
     Ui::StarsInfoWindow *ui;

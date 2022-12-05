@@ -6,7 +6,7 @@
 using namespace std;
 
 const int borderMassC = 10;
-const double G = 6.67408e-11, systemRadius = 1e12, distConnect = 1e9, dt = 30000;
+const double G = 6.67408e-11, distConnect = 1e9;
 const double massSun   = 1.98892e30,
              massEarth = 5.9742e24,
              massJup   = 1898.6e24,
@@ -89,6 +89,9 @@ Star& Star::operator+=(Star* &rhs) {
         v[i] = (v[i]*m + rhs->v[i]*rhs->m) / (m + rhs->m);
     }
     m += rhs->m;
+    galaxy->counter_mutex.lock();
+    galaxy->stars_mass += rhs->m;
+    galaxy->counter_mutex.unlock();
     ChangeColourRadius();
 
     delete rhs;
@@ -106,10 +109,14 @@ Star::Star(double *coord, double *speed, double mass, Galaxy* gl){
     ChangeColourRadius();
     galaxy = gl;
     gl->star_counter++;
+    gl->stars_mass += m;
 }
 
 Star::~Star(){
+    galaxy->counter_mutex.lock();
+    galaxy->stars_mass -= m;
     galaxy->star_counter--;
+    galaxy->counter_mutex.unlock();
 }
 
 Sector::Sector(Galaxy* gl){
@@ -181,10 +188,10 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
    for(int i = 1; i < max_star_index; ++i){
        if(stars[i]){
            for(int k = 0; k < dim; ++k){
-               stars[i]->v[k] += dt * stars[i]->f[k] / stars[i]->m; //можно не делить на массу, а выше суммировать ускорение
+               stars[i]->v[k] += gl->dt * stars[i]->f[k] / stars[i]->m; //можно не делить на массу, а выше суммировать ускорение
            }
            for(int k = 0; k < dim; ++k){
-               stars[i]->x[k] += dt * stars[i]->v[k];
+               stars[i]->x[k] += gl->dt * stars[i]->v[k];
            }
 
            Sector* new_sector = gl->GetSectorByCoords(stars[i]->x[0],stars[i]->x[1]);
@@ -239,17 +246,39 @@ void MoveThread(Galaxy* gl){
     }
 }
 
-Galaxy::Galaxy(int n, int tps):num(n),thread_pool_size(tps){
-    selectors_queue = new QueueWait<Sector*>(tps);
-    CreateThreadPool();
+Galaxy::Galaxy(int count_stars, int count_threads, int size_sector, int size_rect, double system_radius, int dt){
+    this->dt = dt;
+    num = count_stars;
+    thread_pool_size = count_threads;
+    sun_radius = size_sector;
+    length = size_rect;
+    systemRadius = system_radius;
+
+    Init();
 };
+
+void Galaxy::Init(){
+    coefX = length / 2 / systemRadius;
+    centerX = length / 2;
+    sector_global_h = sun_radius / coefX;
+    sectors_count = length / sun_radius;
+
+    sectors = new Sector**[sectors_count];
+    for(int i = 0; i < sectors_count; i++){
+        sectors[i] = new Sector*[sectors_count];
+    }
+
+    selectors_queue = new QueueWait<Sector*>(thread_pool_size);
+    CreateThreadPool();
+}
+
+Galaxy::Galaxy(){}
 
 void Galaxy::GenerateStars(){
     double x1[dim] = {0}, v1[dim] = {0};
     sun = new Star(x1, v1, massSun, this);
 
     CreateSectors();
-
     double rad;
     for(int i = 1; i < num; ++i){
         rad = 0;
@@ -291,7 +320,9 @@ Galaxy::~Galaxy(){
         for(int j = 0; j < sectors_count; j++){
             delete sectors[i][j];
         }
+        delete [] sectors[i];
     }
+    delete [] sectors;
     delete sun;
 };
 
@@ -441,6 +472,11 @@ Galaxy& Galaxy::operator>>(ofstream &file){
 
     int stars_count = all_stars.size();
     file.write((const char*)&stars_count,sizeof (int));
+    file.write((const char*)&thread_pool_size,sizeof (int));
+    file.write((const char*)&length,sizeof (int));
+    file.write((const char*)&sun_radius,sizeof (int));
+    file.write((const char*)&systemRadius,sizeof (double));
+    file.write((const char*)&dt,sizeof (int));
     for(auto star : all_stars){
         file.write((const char*)star->x,sizeof (double));
         file.write((const char*)&star->x[1],sizeof (double));
@@ -456,6 +492,13 @@ Galaxy& Galaxy::operator>>(ofstream &file){
 Galaxy& Galaxy::operator<<(ifstream &file){
     int stars_count = 0;
     file.read((char*)&stars_count,sizeof (int));
+    file.read((char*)&thread_pool_size,sizeof (int));
+    file.read((char*)&length,sizeof (int));
+    file.read((char*)&sun_radius,sizeof (int));
+    file.read((char*)&systemRadius,sizeof (double));
+    file.read((char*)&dt,sizeof (int));
+    Init();
+
     for(int i = 0; i < stars_count; i++){
         double star_vals[5];
         file.read((char*)&star_vals, sizeof(star_vals));
@@ -488,6 +531,8 @@ Galaxy& Galaxy::operator<<(ifstream &file){
 }
 
 void Galaxy::Move(){
+    step++;
+    time += dt;
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             if(sectors[i][j]->stars_count){
