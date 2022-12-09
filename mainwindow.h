@@ -29,7 +29,6 @@ public:
     void Stop(bool save);
 
 private:
-    StarsInfoWindow* info_window;
     Ui::MainWindow *ui;
 
 protected:

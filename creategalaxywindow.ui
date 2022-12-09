@@ -7,30 +7,12 @@
     <x>0</x>
     <y>0</y>
     <width>365</width>
-    <height>179</height>
+    <height>203</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QLabel" name="label">
-   <property name="geometry">
-    <rect>
-     <x>10</x>
-     <y>10</y>
-     <width>221</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>10</pointsize>
-    </font>
-   </property>
-   <property name="text">
-    <string>Количество потоков:</string>
-   </property>
-  </widget>
   <widget class="QLabel" name="label_2">
    <property name="geometry">
     <rect>
@@ -101,24 +83,6 @@
    </property>
    <property name="text">
     <string>Радиус системы:</string>
-   </property>
-  </widget>
-  <widget class="QLineEdit" name="countThreads">
-   <property name="geometry">
-    <rect>
-     <x>240</x>
-     <y>10</y>
-     <width>113</width>
-     <height>21</height>
-    </rect>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>10</pointsize>
-    </font>
-   </property>
-   <property name="text">
-    <string>16</string>
    </property>
   </widget>
   <widget class="QLineEdit" name="sectorSize">

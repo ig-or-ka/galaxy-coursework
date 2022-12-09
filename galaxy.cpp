@@ -18,59 +18,6 @@ const int nBorders = sizeof(borderMass) / sizeof(double);
 const QColor colStar[] = {Qt::cyan, Qt::darkGreen, Qt::magenta, Qt::yellow, Qt::white};
 const int nColor = sizeof(colStar) / sizeof(colStar[0]);
 
-template <typename T>
-void QueueWait<T>::unlock(){
-    empty_wait_flag = true;
-    pop_wait_trigger.notify_all();
-}
-
-template <typename T>
-T QueueWait<T>::pop(){
-    while (true) {
-        push_pop_mutex.lock();
-
-        T value = nullptr;
-        if(!que.empty()){
-            value = que.front();
-            que.pop();
-        }
-
-        push_pop_mutex.unlock();
-
-        return value;
-    }
-}
-
-template <typename T>
-QueueWait<T>::QueueWait(int tps):thread_pool_size(tps){};
-
-template <typename T>
-void QueueWait<T>::wait_pop(){
-    wait_mutex.lock();
-    count_wait++;
-
-    if(count_wait == thread_pool_size){
-        while(empty_wait_flag){
-            empty_wait_trigger.notify_all();
-        }
-    }
-    wait_mutex.unlock();
-
-    unique_lock <mutex> setTriggerUniqueLock (pop_wait_trigger_lock);
-    pop_wait_trigger.wait (setTriggerUniqueLock);
-
-    wait_mutex.lock();
-    count_wait--;
-    wait_mutex.unlock();
-}
-
-template <typename T>
-void QueueWait<T>::wait_empty(){
-    unique_lock <mutex> setTriggerUniqueLock (empty_wait_trigger_lock);
-    empty_wait_trigger.wait (setTriggerUniqueLock);
-    empty_wait_flag = false;
-}
-
 void Star::ChangeColourRadius(){
     col = colStar[nColor-1];
     radius = 6;
@@ -89,9 +36,7 @@ Star& Star::operator+=(Star* &rhs) {
         v[i] = (v[i]*m + rhs->v[i]*rhs->m) / (m + rhs->m);
     }
     m += rhs->m;
-    galaxy->counter_mutex.lock();
     galaxy->stars_mass += rhs->m;
-    galaxy->counter_mutex.unlock();
     ChangeColourRadius();
 
     delete rhs;
@@ -113,10 +58,8 @@ Star::Star(double *coord, double *speed, double mass, Galaxy* gl){
 }
 
 Star::~Star(){
-    galaxy->counter_mutex.lock();
     galaxy->stars_mass -= m;
     galaxy->star_counter--;
-    galaxy->counter_mutex.unlock();
 }
 
 Sector::Sector(Galaxy* gl){
@@ -138,7 +81,7 @@ Sector::~Sector(){
     delete [] stars;
 }
 
-void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
+void Sector::Move(){
    double dist;
    double dCoord[dim];
    for(int i = 0; i < max_star_index; ++i){ // force nullification
@@ -158,9 +101,7 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
                        dist += dCoord[k] * dCoord[k];
                    }
                    if(sqrt(dist) < distConnect){
-                       change_sector_requests_thread.push_back({REMOVED_STAR,stars[j]});
                        (*stars[i]) += stars[j];
-                       change_sector_requests_thread.push_back({CHANGE_MASS,stars[i]});
                    }
                }
            }
@@ -175,7 +116,7 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
                        dCoord[k] = stars[i]->x[k] - stars[j]->x[k];
                        dist += dCoord[k] * dCoord[k];
                    }
-                   // dist = sqrt(dist); // для знаменателя пока квадрат, потом возьмем корень
+
                    for(int k = 0; k < dim; ++k){
                        double tmp = G * stars[i]->m * stars[j]->m / dist;
                        stars[i]->f[k] -= tmp * dCoord[k] / sqrt(dist);
@@ -188,7 +129,7 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
    for(int i = 1; i < max_star_index; ++i){
        if(stars[i]){
            for(int k = 0; k < dim; ++k){
-               stars[i]->v[k] += gl->dt * stars[i]->f[k] / stars[i]->m; //можно не делить на массу, а выше суммировать ускорение
+               stars[i]->v[k] += gl->dt * stars[i]->f[k] / stars[i]->m;
            }
            for(int k = 0; k < dim; ++k){
                stars[i]->x[k] += gl->dt * stars[i]->v[k];
@@ -197,13 +138,12 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
            Sector* new_sector = gl->GetSectorByCoords(stars[i]->x[0],stars[i]->x[1]);
 
            if(new_sector == nullptr){
-               change_sector_requests_thread.push_back({REMOVED_STAR,stars[i]});
                delete stars[i];
                stars[i] = nullptr;
                stars_count--;
            }
            else if(new_sector != this){
-               change_sector_requests_thread.push_back({CHANGE_SECTOR,stars[i]});
+               new_sector->wait_add.push(stars[i]);
                stars[i] = nullptr;
                stars_count--;
            }
@@ -211,45 +151,9 @@ void Sector::Move(vector<ChangeRequest>& change_sector_requests_thread){
    }
 }
 
-void MoveThread(Galaxy* gl){
-    vector<ChangeRequest> change_reqs;
-    while(gl->work){
-        Sector* sec = gl->selectors_queue->pop();
-        if(sec == nullptr){
-            gl->change_sector_requests_mutex.lock();
-
-            gl->change_status_requests.insert(
-                end(gl->change_status_requests),
-                begin(change_reqs),
-                end(change_reqs)
-            );
-
-            gl->change_sector_requests_mutex.unlock();
-            change_reqs.clear();
-
-            gl->selectors_queue->wait_pop();
-            continue;
-        }
-        sec->Move(change_reqs);
-    }
-
-    bool stop_wait_end = false;
-    gl->count_stoped_mutex.lock();
-    gl->count_stoped++;
-
-    stop_wait_end = gl->thread_pool_size == gl->count_stoped;
-    gl->count_stoped_mutex.unlock();
-
-    if(stop_wait_end){
-        while(!gl->stoped)
-            gl->stop_wait_trigger.notify_all();
-    }
-}
-
-Galaxy::Galaxy(int count_stars, int count_threads, int size_sector, int size_rect, double system_radius, int dt){
+Galaxy::Galaxy(int count_stars, int size_sector, int size_rect, double system_radius, int dt){
     this->dt = dt;
     num = count_stars;
-    thread_pool_size = count_threads;
     sun_radius = size_sector;
     length = size_rect;
     systemRadius = system_radius;
@@ -267,9 +171,6 @@ void Galaxy::Init(){
     for(int i = 0; i < sectors_count; i++){
         sectors[i] = new Sector*[sectors_count];
     }
-
-    selectors_queue = new QueueWait<Sector*>(thread_pool_size);
-    CreateThreadPool();
 }
 
 Galaxy::Galaxy(){}
@@ -294,13 +195,11 @@ void Galaxy::GenerateStars(){
         v1[0] =  absV * sin(fi);
         v1[1] = -absV * cos(fi); // скорость направлена вдоль окружности с центром в начале координат
         Star* this_star = new Star(x1, v1, massEarth / num * (6 * i), this);
+        //Star* this_star = new Star(x1, v1, massSun / 2, this);
 
         Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
         if(sec){
-            change_status_requests.push_back({CHANGE_SECTOR,this_star});
-            if(i >= num - STARS_TOP_COUNT){
-                top_mass_stars.push_back(this_star);
-            }
+            sec->wait_add.push(this_star);
         }
         else{
             delete this_star;
@@ -311,11 +210,6 @@ void Galaxy::GenerateStars(){
 }
 
 Galaxy::~Galaxy(){
-    if(work){
-        Stop();
-    }
-
-    delete selectors_queue;
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             delete sectors[i][j];
@@ -347,35 +241,7 @@ bool sort_key(Star* a, Star* b){
     return a->m < b->m;
 }
 
-bool sort_key_reqs(ChangeRequest a, ChangeRequest b){
-    return a.star->m < b.star->m;
-}
-
 void Galaxy::DoRequests(){
-    unordered_set<Star*> removed_stars;
-    unordered_set<Star*> changed_mass_stars;
-
-    for(auto request : change_status_requests){
-        switch (request.action) {
-            case CHANGE_SECTOR:
-            {
-                Sector* sec = GetSectorByCoords(request.star->x[0],request.star->x[1]);
-                sec->wait_add.push(request.star);
-            }
-            break;
-
-            case CHANGE_MASS:
-                changed_mass_stars.insert(request.star);
-            break;
-
-            case REMOVED_STAR:
-                removed_stars.insert(request.star);
-            break;
-        }
-    }
-
-    change_status_requests.clear();
-
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             for(int k = 1; k < starsInSector; k++){
@@ -394,46 +260,6 @@ void Galaxy::DoRequests(){
             }
         }
     }
-
-    for(auto star : removed_stars){
-        if(changed_mass_stars.count(star)){
-            changed_mass_stars.erase(star);
-        }
-    }
-
-    int count_removed = 0;
-    for(size_t i = 0; i < top_mass_stars.size(); i++){
-        if(removed_stars.count(top_mass_stars[i])){
-            top_mass_stars[i] = 0;
-            count_removed++;
-        }
-        else if(changed_mass_stars.count(top_mass_stars[i])){
-            changed_mass_stars.erase(top_mass_stars[i]);
-        }
-    }
-
-    if(changed_mass_stars.count(sun)){
-        changed_mass_stars.erase(sun);
-    }
-
-    sort(top_mass_stars.begin(),top_mass_stars.end(),sort_key);
-
-    for(int i = 0; i < count_removed; i++){
-        top_mass_stars.pop_back();
-    }
-
-    for(auto star : changed_mass_stars){
-        if(star->m > top_mass_stars[0]->m){
-            top_mass_stars.push_back(star);
-        }
-    }
-
-    sort(top_mass_stars.begin(),top_mass_stars.end(),sort_key);
-    if(top_mass_stars.size() > ADD_STARS_TOP_COUNT + STARS_TOP_COUNT){
-        for(size_t i = 0; i < top_mass_stars.size() - ADD_STARS_TOP_COUNT - STARS_TOP_COUNT; i++){
-            top_mass_stars.erase(top_mass_stars.begin());
-        }
-    }
 }
 
 void Galaxy::CreateSectors(){
@@ -441,13 +267,6 @@ void Galaxy::CreateSectors(){
         for(int j = 0; j < sectors_count; j++){
             sectors[i][j] = new Sector(this);
         }
-    }
-}
-
-void Galaxy::CreateThreadPool(){
-    for(int i = 0; i < thread_pool_size; i++){
-        thread th(MoveThread,this);
-        th.detach();
     }
 }
 
@@ -472,11 +291,11 @@ Galaxy& Galaxy::operator>>(ofstream &file){
 
     int stars_count = all_stars.size();
     file.write((const char*)&stars_count,sizeof (int));
-    file.write((const char*)&thread_pool_size,sizeof (int));
     file.write((const char*)&length,sizeof (int));
     file.write((const char*)&sun_radius,sizeof (int));
     file.write((const char*)&systemRadius,sizeof (double));
     file.write((const char*)&dt,sizeof (int));
+
     for(auto star : all_stars){
         file.write((const char*)star->x,sizeof (double));
         file.write((const char*)&star->x[1],sizeof (double));
@@ -485,14 +304,13 @@ Galaxy& Galaxy::operator>>(ofstream &file){
         file.write((const char*)&star->m,sizeof (double));
     }
     file.flush();
-    //cout << "Count saved stars: " << all_stars.size() << endl;
     return *this;
 }
 
 Galaxy& Galaxy::operator<<(ifstream &file){
     int stars_count = 0;
+
     file.read((char*)&stars_count,sizeof (int));
-    file.read((char*)&thread_pool_size,sizeof (int));
     file.read((char*)&length,sizeof (int));
     file.read((char*)&sun_radius,sizeof (int));
     file.read((char*)&systemRadius,sizeof (double));
@@ -513,7 +331,7 @@ Galaxy& Galaxy::operator<<(ifstream &file){
         else{
             Sector* sec = GetSectorByCoords(this_star->x[0],this_star->x[1]);
             if(sec){
-                change_status_requests.push_back({CHANGE_SECTOR,this_star});
+                sec->wait_add.push(this_star);
             }
             else{
                 delete this_star;
@@ -521,12 +339,8 @@ Galaxy& Galaxy::operator<<(ifstream &file){
         }
     }
 
-    sort(change_status_requests.begin(),change_status_requests.end(),sort_key_reqs);
-    for(int i = 0; i < STARS_TOP_COUNT; i++){
-        top_mass_stars.push_back(change_status_requests[change_status_requests.size()-STARS_TOP_COUNT+i].star);
-    }
+    DoRequests();
 
-    //cout << "Count loaded stars: " << stars_count << endl;
     return *this;
 }
 
@@ -536,20 +350,10 @@ void Galaxy::Move(){
     for(int i = 0; i < sectors_count; i++){
         for(int j = 0; j < sectors_count; j++){
             if(sectors[i][j]->stars_count){
-                selectors_queue->que.push(sectors[i][j]);
+                sectors[i][j]->Move();
             }
         }
     }
-    selectors_queue->unlock();
-    selectors_queue->wait_empty();
 
     DoRequests();
-}
-
-void Galaxy::Stop(){
-    work = false;
-    selectors_queue->unlock();
-    unique_lock <mutex> setTriggerUniqueLock (stop_wait_trigger_lock);
-    stop_wait_trigger.wait (setTriggerUniqueLock);
-    stoped = true;
 }

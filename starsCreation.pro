@@ -13,22 +13,16 @@ SOURCES += \
     creategalaxywindow.cpp \
     galaxy.cpp \
     main.cpp \
-    mainwindow.cpp \
-    starinfoitem.cpp \
-    starsinfowindow.cpp
+    mainwindow.cpp
 
 HEADERS += \
     creategalaxywindow.h \
     mainwindow.h \
-    star.h \
-    starinfoitem.h \
-    starsinfowindow.h
+    star.h
 
 FORMS += \
     creategalaxywindow.ui \
-    mainwindow.ui \
-    starinfoitem.ui \
-    starsinfowindow.ui
+    mainwindow.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
